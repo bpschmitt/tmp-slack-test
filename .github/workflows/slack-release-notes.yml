@@ -1,0 +1,70 @@
+name: Post Release Notes to Slack
+
+on:
+  release:
+    # Fires when you publish a release (including publishing a release-drafter draft).
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify_slack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post release notes to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::error::SLACK_WEBHOOK_URL secret is not set."
+            exit 1
+          fi
+
+          # Slack message-block text is capped at 3000 chars; truncate the body safely.
+          BODY="${RELEASE_BODY:-_No release notes provided._}"
+          MAX=2800
+          if [ "${#BODY}" -gt "$MAX" ]; then
+            BODY="${BODY:0:$MAX}
+          …_(truncated — see full notes on GitHub)_"
+          fi
+
+          # Build the payload with jq so all fields are correctly JSON-escaped.
+          PAYLOAD=$(jq -n \
+            --arg header "🎉 New release: ${RELEASE_NAME} (${REPO})" \
+            --arg body "$BODY" \
+            --arg url "$RELEASE_URL" \
+            --arg tag "$RELEASE_TAG" \
+            '{
+              blocks: [
+                { type: "header",
+                  text: { type: "plain_text", text: $header, emoji: true } },
+                { type: "section",
+                  text: { type: "mrkdwn", text: $body } },
+                { type: "actions",
+                  elements: [
+                    { type: "button",
+                      text: { type: "plain_text", text: "View on GitHub", emoji: true },
+                      url: $url }
+                  ] }
+              ]
+            }')
+
+          echo "Posting release ${RELEASE_TAG} notes to Slack..."
+          HTTP_CODE=$(curl -sS -o /tmp/slack_resp.txt -w "%{http_code}" \
+            -X POST -H 'Content-type: application/json' \
+            --data "$PAYLOAD" \
+            "$SLACK_WEBHOOK_URL")
+
+          echo "Slack responded with HTTP $HTTP_CODE: $(cat /tmp/slack_resp.txt)"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Slack webhook call failed."
+            exit 1
+          fi

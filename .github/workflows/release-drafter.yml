@@ -1,0 +1,28 @@
+name: Release Drafter
+
+on:
+  push:
+    # Keep the draft release up to date as commits land on main.
+    branches:
+      - main
+  # Optionally allow drafting from a PR event so the draft reflects labels/titles.
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  update_release_draft:
+    permissions:
+      # Needed to create/update the draft GitHub Release.
+      contents: write
+      # Needed to autolabel PRs (optional, safe to keep).
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
