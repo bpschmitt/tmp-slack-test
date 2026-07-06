@@ -28,8 +28,19 @@ jobs:
             exit 1
           fi
 
-          # Slack message-block text is capped at 3000 chars; truncate the body safely.
           BODY="${RELEASE_BODY:-_No release notes provided._}"
+
+          # Convert GitHub Markdown -> Slack mrkdwn.
+          # GitHub delivers the release body with CRLF line endings; strip the
+          # trailing \r first so sed's ^ / $ anchors match each line cleanly.
+          # Slack has no headings: turn "## Heading" (any level) into "*Heading*" (bold).
+          # Slack bold is *single* asterisks, so collapse GitHub's **bold** to *bold*.
+          BODY=$(printf '%s' "$BODY" \
+            | sed -E 's/\r$//' \
+            | sed -E 's/^[[:space:]]*#{1,6}[[:space:]]+(.*)$/*\1*/' \
+            | sed -E 's/\*\*([^*]+)\*\*/*\1*/g')
+
+          # Slack message-block text is capped at 3000 chars; truncate the body safely.
           MAX=2800
           if [ "${#BODY}" -gt "$MAX" ]; then
             BODY="${BODY:0:$MAX}
